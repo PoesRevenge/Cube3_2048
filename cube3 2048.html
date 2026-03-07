@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>CUBE³ — 3D 2048</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Orbitron:wght@400;700;900&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #050508;
+  --panel: #0d0d18;
+  --accent: #00ffcc;
+  --accent2: #ff006e;
+  --text: #e0e0ff;
+  --dim: #3a3a5c;
+  --glow: 0 0 20px #00ffcc66;
+  --CELL: 68px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Space Mono', monospace;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 10%, rgba(0,255,204,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 30% at 80% 80%, rgba(255,0,110,0.05) 0%, transparent 60%);
+  pointer-events: none; z-index: 0;
+}
+
+#header {
+  position: relative; z-index: 10;
+  text-align: center;
+  padding: 14px 20px 0;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+h1 {
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(1.4rem, 5vw, 2.2rem);
+  font-weight: 900;
+  letter-spacing: 0.25em;
+  color: var(--accent);
+  text-shadow: var(--glow), 0 0 60px #00ffcc22;
+  animation: hpulse 4s ease-in-out infinite;
+}
+@keyframes hpulse {
+  0%,100% { text-shadow: var(--glow); }
+  50% { text-shadow: 0 0 30px #00ffcc, 0 0 70px #00ffcc44; }
+}
+
+.subtitle {
+  font-size: 0.55rem; letter-spacing: 0.3em;
+  color: var(--dim); margin-top: 2px; text-transform: uppercase;
+}
+
+#stats {
+  display: flex; gap: 12px; margin-top: 10px; justify-content: center;
+}
+.stat-box {
+  background: var(--panel);
+  border: 1px solid var(--dim);
+  border-radius: 8px; padding: 6px 16px;
+  text-align: center; min-width: 80px;
+}
+.stat-label { font-size: 0.5rem; letter-spacing: 0.2em; color: var(--dim); text-transform: uppercase; }
+.stat-value { font-family: 'Orbitron', sans-serif; font-size: 1.1rem; color: var(--accent); font-weight: 700; }
+
+#scene-wrapper {
+  position: relative; z-index: 10;
+  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  width: 100%;
+  min-height: 0;
+}
+
+#scene {
+  perspective: 700px;
+  perspective-origin: 50% 45%;
+  width: 320px; height: 320px;
+}
+
+#cube-root {
+  width: 320px; height: 320px;
+  transform-style: preserve-3d;
+  transform: rotateX(-28deg) rotateY(38deg);
+  position: relative;
+}
+
+/* ── TILE: a real CSS 3D cube ── */
+.tile {
+  position: absolute;
+  width: 68px; height: 68px;
+  transform-style: preserve-3d;
+}
+
+.face {
+  position: absolute;
+  width: 68px; height: 68px;
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Orbitron', sans-serif; font-weight: 700;
+  font-size: 0.82rem;
+  backface-visibility: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+/* 6 faces of the 68px cube — translateZ by half the cell size = 34px */
+.face.front  { transform: translateZ(34px); }
+.face.back   { transform: rotateY(180deg) translateZ(34px); filter: brightness(0.45); }
+.face.right  { transform: rotateY(90deg)  translateZ(34px); filter: brightness(0.75); }
+.face.left   { transform: rotateY(-90deg) translateZ(34px); filter: brightness(0.65); }
+.face.top    { transform: rotateX(90deg)  translateZ(34px); filter: brightness(0.88); }
+.face.bottom { transform: rotateX(-90deg) translateZ(34px); filter: brightness(0.5); }
+
+/* Only show value clearly on front; dim on sides */
+.face.back .val, .face.left .val, .face.bottom .val { opacity: 0.25; font-size: 0.5em; }
+.val { text-shadow: 0 1px 4px rgba(0,0,0,0.7); pointer-events: none; line-height: 1; }
+
+/* Empty slot — ghost cage cells */
+.tile.v0 .face {
+  background: rgba(14,14,32,0.35);
+  border-color: rgba(58,58,92,0.18);
+}
+
+/* Tile value colors — CSS custom props applied per class */
+.v2    .face { background: rgba(0,185,125,0.88);  color: #fff;    box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v4    .face { background: rgba(10,210,110,0.9);  color: #fff;    box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v8    .face { background: rgba(90,235,155,0.9);  color: #003318; box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v16   .face { background: rgba(255,210,20,0.9);  color: #1a1000; box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v32   .face { background: rgba(255,155,20,0.9);  color: #1a0800; box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v64   .face { background: rgba(255,80,20,0.9);   color: #fff;    box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v128  .face { background: rgba(255,20,90,0.9);   color: #fff;    box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v256  .face { background: rgba(190,20,255,0.9);  color: #fff;    box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v512  .face { background: rgba(100,20,255,0.9);  color: #fff;    box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v1024 .face { background: rgba(20,110,255,0.9);  color: #fff;    box-shadow: inset 0 0 8px rgba(0,0,0,0.25); }
+.v2048 .face { background: linear-gradient(135deg,rgba(0,255,204,0.95),rgba(255,0,110,0.95)); color: #fff; }
+
+/* Outer glow on front face only for non-empty tiles */
+.v2 .face.front    { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 16px rgba(0,185,125,0.5); }
+.v4 .face.front    { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 16px rgba(10,210,110,0.5); }
+.v8 .face.front    { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 18px rgba(90,235,155,0.5); }
+.v16 .face.front   { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 18px rgba(255,210,20,0.5); }
+.v32 .face.front   { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 20px rgba(255,155,20,0.5); }
+.v64 .face.front   { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 20px rgba(255,80,20,0.55); }
+.v128 .face.front  { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 22px rgba(255,20,90,0.55); }
+.v256 .face.front  { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 24px rgba(190,20,255,0.6); }
+.v512 .face.front  { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 26px rgba(100,20,255,0.6); }
+.v1024 .face.front { box-shadow: inset 0 0 8px rgba(0,0,0,0.2), 0 0 28px rgba(20,110,255,0.65); }
+.v2048 .face.front { box-shadow: 0 0 40px rgba(0,255,204,0.8), 0 0 20px rgba(255,0,110,0.6); animation: winGlow 1.2s ease-in-out infinite alternate; }
+
+@keyframes winGlow {
+  from { box-shadow: 0 0 30px rgba(0,255,204,0.8); }
+  to   { box-shadow: 0 0 60px rgba(255,0,110,0.9), 0 0 30px rgba(0,255,204,0.6); }
+}
+
+@keyframes mergePop {
+  0%   { transform: scale(1) translate3d(var(--tx),var(--ty),var(--tz)); }
+  45%  { transform: scale(1.4) translate3d(var(--tx),var(--ty),var(--tz)); }
+  75%  { transform: scale(0.88) translate3d(var(--tx),var(--ty),var(--tz)); }
+  100% { transform: scale(1) translate3d(var(--tx),var(--ty),var(--tz)); }
+}
+.tile.merging { animation: mergePop 0.36s ease forwards; }
+
+/* ── CONTROLS ── */
+#controls {
+  position: relative; z-index: 10;
+  width: 100%; flex-shrink: 0;
+  padding: 8px 16px 14px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+button {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--dim);
+  background: var(--panel); color: var(--text);
+  cursor: pointer; transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+button:active, button:hover {
+  border-color: var(--accent); color: var(--accent);
+  box-shadow: 0 0 10px #00ffcc33;
+}
+button.primary { border-color: var(--accent); color: var(--accent); }
+
+#dpad {
+  display: grid;
+  grid-template-columns: repeat(5, 42px);
+  grid-template-rows: repeat(3, 42px);
+  gap: 4px;
+  align-items: center; justify-items: center;
+}
+.dp { width: 42px; height: 42px; padding: 0; font-size: 1rem; display: flex; align-items:center; justify-content:center; }
+.dp-empty { pointer-events: none; background: transparent !important; border-color: transparent !important; box-shadow: none !important; color: var(--dim); font-size: 0.4rem; letter-spacing: 0; }
+
+/* ── GAME OVER CINEMATIC ── */
+#go-screen {
+  display: none; position: fixed; inset: 0;
+  z-index: 300; pointer-events: none;
+  align-items: center; justify-content: center;
+}
+#go-screen.active { display: flex; }
+
+/* Full-screen flash on explosion */
+#go-flash {
+  position: fixed; inset: 0;
+  background: white;
+  opacity: 0; pointer-events: none;
+  z-index: 310;
+}
+@keyframes goFlash {
+  0%   { opacity: 0; }
+  8%   { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+#go-flash.firing { animation: goFlash 0.6s ease-out forwards; }
+
+/* Shockwave ring */
+#go-shockwave {
+  position: fixed;
+  top: 50%; left: 50%;
+  width: 10px; height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  border: 3px solid rgba(0,255,204,0.9);
+  opacity: 0;
+  z-index: 309;
+  pointer-events: none;
+}
+@keyframes goShockwave {
+  0%   { transform: scale(1);   opacity: 0.9; }
+  100% { transform: scale(80);  opacity: 0; }
+}
+#go-shockwave.firing { animation: goShockwave 0.8s cubic-bezier(0.2,0.6,0.4,1) forwards; }
+
+/* Second slower ring */
+#go-shockwave2 {
+  position: fixed;
+  top: 50%; left: 50%;
+  width: 10px; height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,0,110,0.7);
+  opacity: 0;
+  z-index: 308;
+  pointer-events: none;
+}
+@keyframes goShockwave2 {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(60);  opacity: 0; }
+}
+#go-shockwave2.firing { animation: goShockwave2 1.1s 0.15s cubic-bezier(0.2,0.6,0.4,1) forwards; }
+
+/* The singularity black hole dot */
+#singularity {
+  position: fixed;
+  top: 50%; left: 50%;
+  width: 6px; height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 0 rgba(0,255,204,0);
+  opacity: 0;
+  z-index: 311;
+  pointer-events: none;
+  transform: scale(0);
+}
+@keyframes singularityAppear {
+  0%   { transform: scale(0);   opacity: 0;   box-shadow: 0 0 0 0 rgba(0,255,204,0); }
+  30%  { transform: scale(8);   opacity: 1;   box-shadow: 0 0 30px 10px rgba(0,255,204,0.8); }
+  65%  { transform: scale(5);   opacity: 1;   box-shadow: 0 0 50px 20px rgba(255,0,110,0.7); }
+  85%  { transform: scale(2);   opacity: 0.8; box-shadow: 0 0 20px 8px rgba(100,0,255,0.6); }
+  100% { transform: scale(0);   opacity: 0;   box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+}
+#singularity.firing { animation: singularityAppear 1.8s 0.5s cubic-bezier(0.4,0,0.2,1) forwards; }
+
+/* Score reveal text — mid-cinematic flash */
+#go-score-display {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  opacity: 0;
+  z-index: 320;
+  pointer-events: none;
+}
+#go-score-display .go-label {
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(1.6rem, 6vw, 2.4rem);
+  font-weight: 900;
+  color: var(--accent2);
+  letter-spacing: 0.2em;
+  text-shadow: 0 0 30px rgba(255,0,110,0.8);
+}
+#go-score-display .go-score {
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(2rem, 8vw, 3.5rem);
+  font-weight: 900;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 40px rgba(0,255,204,0.9);
+  margin-top: 8px;
+}
+#go-score-display .go-sub {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--dim);
+  letter-spacing: 0.2em;
+  margin-top: 12px;
+}
+@keyframes goScoreIn {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.4); filter: blur(12px); }
+  60%  { opacity: 1; transform: translate(-50%,-50%) scale(1.05); filter: blur(0); }
+  100% { opacity: 1; transform: translate(-50%,-50%) scale(1); filter: blur(0); }
+}
+@keyframes goScoreOut {
+  0%   { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(0); filter: blur(20px); }
+}
+#go-score-display.appear { animation: goScoreIn 0.7s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+#go-score-display.vanish { animation: goScoreOut 0.5s ease-in forwards; }
+
+/* Tile explosion — each tile gets inline --ex/ey/ez explosion vector */
+@keyframes tileExplode {
+  0%   { transform: translate3d(var(--tx),var(--ty),var(--tz)) scale(1);   opacity: 1; }
+  25%  { transform: translate3d(
+           calc(var(--tx) + var(--ex)*0.3),
+           calc(var(--ty) + var(--ey)*0.3),
+           calc(var(--tz) + var(--ez)*0.3)
+         ) scale(1.2) rotateX(var(--rx)) rotateY(var(--ry)); opacity: 1; }
+  70%  { transform: translate3d(
+           calc(var(--tx) + var(--ex)),
+           calc(var(--ty) + var(--ey)),
+           calc(var(--tz) + var(--ez))
+         ) scale(0.6) rotateX(calc(var(--rx)*2)) rotateY(calc(var(--ry)*2)); opacity: 0.6; }
+  100% { transform: translate3d(
+           calc(var(--tx) + var(--ex)*1.3),
+           calc(var(--ty) + var(--ey)*1.3),
+           calc(var(--tz) + var(--ez)*1.3)
+         ) scale(0) rotateX(calc(var(--rx)*3)) rotateY(calc(var(--ry)*3)); opacity: 0; }
+}
+
+/* Tile collapse into singularity */
+@keyframes tileCollapse {
+  0%   { transform: translate3d(var(--tx),var(--ty),var(--tz)) scale(1); opacity: 1; }
+  100% { transform: translate3d(0px, 0px, 0px) scale(0) rotateX(720deg) rotateY(720deg); opacity: 0; }
+}
+
+.tile.exploding {
+  animation: tileExplode 0.7s cubic-bezier(0.4,0,1,1) forwards;
+  transition: none !important;
+}
+.tile.collapsing {
+  animation: tileCollapse 0.6s cubic-bezier(0.4,0,0.6,1) forwards;
+  transition: none !important;
+}
+
+/* ── POST-SINGULARITY GAME OVER OVERLAY ── */
+#gameover-overlay {
+  display: none; position: fixed; inset: 0;
+  z-index: 400;
+  background: rgba(5,5,8,0.97);
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 0;
+  text-align: center; padding: 40px 30px;
+}
+#gameover-overlay.show { display: flex; }
+
+@keyframes goOverlayIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+#gameover-overlay.show { animation: goOverlayIn 0.8s ease forwards; }
+
+.go-title-line {
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(2rem, 8vw, 3rem);
+  font-weight: 900;
+  color: var(--accent2);
+  letter-spacing: 0.25em;
+  text-shadow: 0 0 40px rgba(255,0,110,0.9), 0 0 80px rgba(255,0,110,0.4);
+  animation: goTitlePulse 2s ease-in-out infinite;
+  margin-bottom: 32px;
+}
+@keyframes goTitlePulse {
+  0%,100% { text-shadow: 0 0 30px rgba(255,0,110,0.8); }
+  50%     { text-shadow: 0 0 60px rgba(255,0,110,1), 0 0 100px rgba(255,0,110,0.5); }
+}
+
+.go-score-block {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; margin-bottom: 16px;
+  padding: 20px 36px;
+  border: 1px solid rgba(0,255,204,0.2);
+  border-radius: 12px;
+  background: rgba(0,255,204,0.04);
+  position: relative;
+}
+.go-score-block::before {
+  content: '';
+  position: absolute; inset: -1px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(0,255,204,0.15), rgba(255,0,110,0.1));
+  z-index: -1;
+}
+.go-score-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.55rem; letter-spacing: 0.3em;
+  color: var(--dim); text-transform: uppercase;
+}
+.go-score-num {
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(2.4rem, 9vw, 4rem);
+  font-weight: 900; color: var(--accent);
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 30px rgba(0,255,204,0.7);
+  line-height: 1;
+}
+
+.go-best-block {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 32px;
+}
+.go-best-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.6rem; letter-spacing: 0.2em;
+  color: var(--dim); text-transform: uppercase;
+}
+.go-best-num {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.1rem; font-weight: 700;
+  color: rgba(255,210,20,0.9);
+  text-shadow: 0 0 16px rgba(255,210,20,0.6);
+  letter-spacing: 0.05em;
+}
+.go-best-crown { font-size: 1rem; }
+
+.go-divider {
+  width: 60px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--dim), transparent);
+  margin-bottom: 28px;
+}
+
+.go-new-badge {
+  display: inline-block;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.5rem; letter-spacing: 0.2em;
+  color: rgba(255,210,20,0.9);
+  border: 1px solid rgba(255,210,20,0.4);
+  padding: 3px 10px; border-radius: 4px;
+  background: rgba(255,210,20,0.08);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+#overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(5,5,8,0.94);
+  z-index: 200;
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 18px;
+  text-align: center; padding: 40px 30px;
+}
+#overlay.show { display: flex; }
+#overlay h2 {
+  font-family: 'Orbitron', sans-serif; font-size: 1.8rem;
+  color: var(--accent); text-shadow: var(--glow);
+}
+#overlay p { color: var(--dim); font-size: 0.72rem; line-height: 1.9; max-width: 300px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>CUBE³</h1>
+  <div class="subtitle">3D · 2048</div>
+  <div id="stats">
+    <div class="stat-box"><div class="stat-label">Score</div><div class="stat-value" id="score">0</div></div>
+    <div class="stat-box"><div class="stat-label">Best</div><div class="stat-value" id="best">0</div></div>
+    <div class="stat-box"><div class="stat-label">Moves</div><div class="stat-value" id="moves">0</div></div>
+  </div>
+</div>
+
+<div id="scene-wrapper">
+  <div id="scene">
+    <div id="cube-root"></div>
+  </div>
+</div>
+
+<div id="controls">
+  <div id="dpad">
+    <div class="dp dp-empty"></div>
+    <button class="dp" data-dir="up">↑</button>
+    <div class="dp dp-empty"></div>
+    <button class="dp" data-dir="in">▲<br><span style="font-size:0.4rem">Z-</span></button>
+    <div class="dp dp-empty"></div>
+
+    <button class="dp" data-dir="left">←</button>
+    <div class="dp dp-empty"></div>
+    <button class="dp" data-dir="right">→</button>
+    <div class="dp dp-empty"></div>
+    <div class="dp dp-empty"></div>
+
+    <div class="dp dp-empty"></div>
+    <button class="dp" data-dir="down">↓</button>
+    <div class="dp dp-empty"></div>
+    <button class="dp" data-dir="out">▼<br><span style="font-size:0.4rem">Z+</span></button>
+    <div class="dp dp-empty"></div>
+  </div>
+
+  <div class="btn-row">
+    <button id="btn-new">New Game</button>
+    <button id="btn-help">How to Play</button>
+  </div>
+</div>
+
+<!-- Game Over Cinematic layers -->
+<div id="go-screen">
+  <div id="go-flash"></div>
+  <div id="go-shockwave"></div>
+  <div id="go-shockwave2"></div>
+  <div id="singularity"></div>
+  <div id="go-score-display">
+    <div class="go-label">GAME OVER</div>
+    <div class="go-score" id="go-score-val">0</div>
+    <div class="go-sub">COLLAPSING INTO THE VOID…</div>
+  </div>
+</div>
+
+<!-- Post-singularity Game Over screen -->
+<div id="gameover-overlay">
+  <div class="go-title-line">GAME OVER</div>
+  <div class="go-score-block">
+    <div class="go-score-label">Final Score</div>
+    <div class="go-score-num" id="go-final-score">0</div>
+  </div>
+  <div class="go-best-block">
+    <span class="go-best-crown">👑</span>
+    <span class="go-best-label">Best</span>
+    <span class="go-best-num" id="go-best-score">0</span>
+    <span class="go-new-badge" id="go-new-best" style="display:none">NEW BEST!</span>
+  </div>
+  <div class="go-divider"></div>
+  <button class="primary" id="btn-go-play" style="font-size:0.75rem;padding:12px 32px;letter-spacing:0.15em;">PLAY AGAIN</button>
+</div>
+
+<!-- Win / Help overlay -->
+<div id="overlay">
+  <h2 id="overlay-title">CUBE³</h2>
+  <p id="overlay-msg"></p>
+  <button class="primary" id="btn-close">LET'S GO</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════
+const SIZE  = 3;
+const CELL  = 68;   // px – must match CSS
+const GAP   = 12;
+const STEP  = CELL + GAP;  // 80
+const HALF  = (SIZE - 1) / 2; // 1.0
+const SCENE = 320;
+
+// ═══════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════
+let board    = []; // [z][y][x] → value
+let tileGrid = []; // [z][y][x] → tileId | null
+let tilePool = {}; // id → { el, gx, gy, gz, value }
+let nextId   = 0;
+
+let score = 0, best = 0, moveCount = 0;
+let animating = false;
+let hasWon = false; // tracks if win overlay already shown this game
+
+// ═══════════════════════════════════════════
+//  BOARD HELPERS
+// ═══════════════════════════════════════════
+function initArrays() {
+  board    = Array.from({length:SIZE},()=>Array.from({length:SIZE},()=>Array(SIZE).fill(0)));
+  tileGrid = Array.from({length:SIZE},()=>Array.from({length:SIZE},()=>Array(SIZE).fill(null)));
+}
+const at   = (x,y,z)   => board[z][y][x];
+const setV = (x,y,z,v) => { board[z][y][x] = v; };
+
+function addRandom() {
+  const empty = [];
+  for(let z=0;z<SIZE;z++) for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++)
+    if(at(x,y,z)===0) empty.push({x,y,z});
+  if(!empty.length) return false;
+  const {x,y,z} = empty[Math.floor(Math.random()*empty.length)];
+  const v = Math.random()<0.85?2:4;
+  setV(x,y,z,v);
+  tileGrid[z][y][x] = spawnTile(x,y,z,v);
+  return true;
+}
+
+// ═══════════════════════════════════════════
+//  SLIDE LOGIC
+// ═══════════════════════════════════════════
+// Returns array of move descriptors or null if nothing moved
+function computeSlide(axis, sign) {
+  // Deep-copy board & tileGrid for scratch
+  const B  = board.map(l=>l.map(r=>[...r]));
+  const TG = tileGrid.map(l=>l.map(r=>[...r]));
+  const anims   = [];
+  const merged  = new Set();
+
+  // Map (a, b, c) where c is along the slide axis → {x,y,z}
+  const toPos = (a,b,c) => {
+    if(axis==='x') return {x:c, y:a, z:b};
+    if(axis==='y') return {x:a, y:c, z:b};
+    return                {x:a, y:b, z:c};
+  };
+
+  for(let a=0; a<SIZE; a++) {
+    for(let b2=0; b2<SIZE; b2++) {
+      // Multiple compaction passes
+      for(let pass=0; pass<SIZE*2; pass++) {
+        for(let ci=0; ci<SIZE-1; ci++) {
+          // c is where we want to push things TO (destination end)
+          const c  = sign===1 ? (SIZE-1-ci) : ci;
+          const cn = sign===1 ? c-1          : c+1;
+          if(cn<0||cn>=SIZE) continue;
+
+          const dst = toPos(a,b2,c);
+          const src = toPos(a,b2,cn);
+
+          const dv = B[dst.z][dst.y][dst.x];
+          const sv = B[src.z][src.y][src.x];
+          const dt = TG[dst.z][dst.y][dst.x];
+          const st = TG[src.z][src.y][src.x];
+          const dk = `${dst.x},${dst.y},${dst.z}`;
+          const sk = `${src.x},${src.y},${src.z}`;
+
+          if(dv===0 && sv!==0) {
+            // Slide into empty
+            B[dst.z][dst.y][dst.x]  = sv;
+            B[src.z][src.y][src.x]  = 0;
+            TG[dst.z][dst.y][dst.x] = st;
+            TG[src.z][src.y][src.x] = null;
+            anims.push({ tileId:st, fx:src.x, fy:src.y, fz:src.z,
+                                    tx:dst.x, ty:dst.y, tz:dst.z,
+                         newVal:sv, isMerge:false });
+          } else if(dv!==0 && dv===sv && dt!==null && st!==null &&
+                    !merged.has(dk) && !merged.has(sk)) {
+            // Merge
+            const nv = dv*2;
+            B[dst.z][dst.y][dst.x]  = nv;
+            B[src.z][src.y][src.x]  = 0;
+            TG[src.z][src.y][src.x] = null;
+            // dt stays at dst; st moves to dst and disappears
+            anims.push({ tileId:st, fx:src.x, fy:src.y, fz:src.z,
+                                    tx:dst.x, ty:dst.y, tz:dst.z,
+                         newVal:nv, isMerge:true, survivorId:dt });
+            merged.add(dk);
+          }
+        }
+      }
+    }
+  }
+
+  // Check if anything actually changed
+  let changed = false;
+  outer: for(let z=0;z<SIZE;z++) for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++)
+    if(B[z][y][x]!==board[z][y][x]||TG[z][y][x]!==tileGrid[z][y][x]){changed=true;break outer;}
+
+  if(!changed) return null;
+
+  // Commit scratch → live
+  for(let z=0;z<SIZE;z++) for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++) {
+    board[z][y][x]    = B[z][y][x];
+    tileGrid[z][y][x] = TG[z][y][x];
+  }
+  return anims;
+}
+
+const DIRS = {
+  right:{axis:'x',sign: 1}, left:{axis:'x',sign:-1},
+  down: {axis:'y',sign: 1}, up:  {axis:'y',sign:-1},
+  out:  {axis:'z',sign: 1}, in:  {axis:'z',sign:-1},
+};
+
+function hasMovesLeft() {
+  for(let z=0;z<SIZE;z++) for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++) {
+    if(at(x,y,z)===0) return true;
+    if(x+1<SIZE && at(x,y,z)===at(x+1,y,z)) return true;
+    if(y+1<SIZE && at(x,y,z)===at(x,y+1,z)) return true;
+    if(z+1<SIZE && at(x,y,z)===at(x,y,z+1)) return true;
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════
+//  3D CSS TILE RENDERING
+// ═══════════════════════════════════════════
+const root = document.getElementById('cube-root');
+
+// Convert 3-D grid position → CSS translate3d values
+// The scene div is SCENE×SCENE; origin is its centre
+function worldPos(gx, gy, gz) {
+  return {
+    x: SCENE/2 + (gx - HALF) * STEP - CELL/2,
+    y: SCENE/2 + (gy - HALF) * STEP - CELL/2,
+    z: (gz - HALF) * STEP
+  };
+}
+
+function applyTileTransform(el, gx, gy, gz, animate) {
+  const {x,y,z} = worldPos(gx, gy, gz);
+  el.style.transition = animate
+    ? 'transform 0.28s cubic-bezier(0.25,0.46,0.45,0.94)'
+    : 'none';
+  // Store for merge-pop animation reference
+  el.style.setProperty('--tx', x+'px');
+  el.style.setProperty('--ty', y+'px');
+  el.style.setProperty('--tz', z+'px');
+  el.style.transform = `translate3d(${x}px,${y}px,${z}px)`;
+}
+
+function buildTileEl(value) {
+  const el = document.createElement('div');
+  el.className = 'tile v'+(value||0);
+  ['front','back','right','left','top','bottom'].forEach(face => {
+    const f = document.createElement('div');
+    f.className = 'face '+face;
+    if(value) {
+      const sp = document.createElement('span');
+      sp.className = 'val';
+      sp.textContent = value;
+      f.appendChild(sp);
+    }
+    el.appendChild(f);
+  });
+  return el;
+}
+
+function spawnTile(gx, gy, gz, value) {
+  const id = nextId++;
+  const el = buildTileEl(value);
+  root.appendChild(el);
+  applyTileTransform(el, gx, gy, gz, false);
+  tilePool[id] = { el, gx, gy, gz, value };
+  return id;
+}
+
+function moveTile(id, gx, gy, gz, animate) {
+  const t = tilePool[id];
+  if(!t) return;
+  t.gx=gx; t.gy=gy; t.gz=gz;
+  applyTileTransform(t.el, gx, gy, gz, animate);
+}
+
+function updateTileValue(id, value) {
+  const t = tilePool[id];
+  if(!t) return;
+  t.value = value;
+  t.el.className = 'tile v'+value;
+  t.el.querySelectorAll('.val').forEach(s=>s.textContent=value);
+}
+
+function removeTile(id) {
+  const t = tilePool[id];
+  if(!t) return;
+  t.el.remove();
+  delete tilePool[id];
+}
+
+function buildCage() {
+  // Ghost tiles as visual slot markers
+  for(let z=0;z<SIZE;z++) for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++) {
+    const el = buildTileEl(0);
+    el.dataset.cage = 1;
+    root.appendChild(el);
+    applyTileTransform(el, x, y, z, false);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  GAME FLOW
+// ═══════════════════════════════════════════
+function initGame() {
+  root.innerHTML = '';
+  tilePool = {}; nextId = 0;
+  score = 0; moveCount = 0; hasWon = false;
+  updateStats();
+  initArrays();
+  buildCage();
+  addRandom(); addRandom();
+}
+
+function doMove(dirName) {
+  if(animating) return;
+  const dir = DIRS[dirName];
+  if(!dir) return;
+
+  const anims = computeSlide(dir.axis, dir.sign);
+  if(!anims || anims.length===0) return; // nothing moved — keep animating=false
+
+  animating = true;
+  moveCount++;
+
+  const ANIM = 280;
+
+  // Deduplicate: if the same tileId appears multiple times (multi-step slides
+  // emitted one record per step), keep only the last record for each tileId
+  const animMap = new Map();
+  anims.forEach(a => animMap.set(a.tileId, a));
+  const dedupedAnims = Array.from(animMap.values());
+
+  // Phase 1 – animate all tiles to their final positions
+  dedupedAnims.forEach(a => moveTile(a.tileId, a.tx, a.ty, a.tz, true));
+
+  // Phase 2 – after animation, resolve merges, spawn new tile
+  setTimeout(()=>{
+    dedupedAnims.forEach(a => {
+      if(a.isMerge) {
+        removeTile(a.tileId);
+        updateTileValue(a.survivorId, a.newVal);
+        const st = tilePool[a.survivorId];
+        if(st) {
+          st.el.classList.remove('merging');
+          void st.el.offsetWidth;
+          st.el.classList.add('merging');
+        }
+        score += a.newVal;
+      }
+    });
+
+    if(score>best) best=score;
+    updateStats();
+
+    // Win check — only show once per game
+    if(!hasWon) {
+      for(let z=0;z<SIZE;z++) for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++)
+        if(at(x,y,z)===2048) { hasWon=true; break; }
+      if(hasWon) {
+        addRandom(); // spawn one tile then pause for win message
+        animating=false;
+        showOverlay('YOU WIN! 🎉','You reached <span style="color:var(--accent)">2048</span>!\n\nKeep playing to beat your score, or start a new game.');
+        return;
+      }
+    }
+
+    addRandom();
+    animating = false;
+
+    if(!hasMovesLeft()) triggerGameOver();
+  }, ANIM+30);
+}
+
+function updateStats() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('best').textContent  = best;
+  document.getElementById('moves').textContent = moveCount;
+}
+
+// ═══════════════════════════════════════════
+//  GAME OVER CINEMATIC
+// ═══════════════════════════════════════════
+function triggerGameOver() {
+  animating = true; // block input during cinematic
+
+  const goScreen   = document.getElementById('go-screen');
+  const goFlash    = document.getElementById('go-flash');
+  const goShock    = document.getElementById('go-shockwave');
+  const goShock2   = document.getElementById('go-shockwave2');
+  const goSing     = document.getElementById('singularity');
+  const goScoreEl  = document.getElementById('go-score-display');
+  const goScoreVal = document.getElementById('go-score-val');
+
+  goScreen.classList.add('active');
+  goScoreVal.textContent = score;
+
+  // ── Phase 1: Explosion (0ms) ──
+  const allTiles = Object.values(tilePool);
+  allTiles.forEach(t => {
+    const ex = (Math.random() - 0.5) * 600;
+    const ey = (Math.random() - 0.5) * 600;
+    const ez = (Math.random() - 0.5) * 600;
+    const rx = (Math.random() - 0.5) * 720;
+    const ry = (Math.random() - 0.5) * 720;
+    t.el.style.setProperty('--ex', ex + 'px');
+    t.el.style.setProperty('--ey', ey + 'px');
+    t.el.style.setProperty('--ez', ez + 'px');
+    t.el.style.setProperty('--rx', rx + 'deg');
+    t.el.style.setProperty('--ry', ry + 'deg');
+    t.el.classList.add('exploding');
+  });
+
+  goFlash.classList.add('firing');
+  setTimeout(() => { goShock.classList.add('firing'); }, 60);
+  setTimeout(() => { goShock2.classList.add('firing'); }, 120);
+
+  // ── Phase 2: Score flash (1600ms) ──
+  setTimeout(() => {
+    goScoreEl.classList.add('appear');
+  }, 1600);
+
+  // ── Phase 3: Collapse (2600ms) ──
+  setTimeout(() => {
+    allTiles.forEach(t => {
+      t.el.classList.remove('exploding');
+      const {x,y,z} = worldPos(t.gx, t.gy, t.gz);
+      t.el.style.transition = 'none';
+      t.el.style.transform = `translate3d(${x}px,${y}px,${z}px)`;
+      void t.el.offsetWidth;
+      t.el.classList.add('collapsing');
+    });
+    goScoreEl.classList.remove('appear');
+    goScoreEl.classList.add('vanish');
+    goSing.classList.add('firing');
+  }, 2600);
+
+  // ── Phase 4: Show Game Over overlay (4200ms) ──
+  setTimeout(() => {
+    // Clean up cinematic elements
+    goScreen.classList.remove('active');
+    goFlash.className = '';
+    goShock.className = '';
+    goShock2.className = '';
+    goSing.className = '';
+    goScoreEl.className = '';
+
+    // Populate and show the game over overlay
+    const isNewBest = (score > 0 && score >= best);
+    document.getElementById('go-final-score').textContent = score;
+    document.getElementById('go-best-score').textContent  = best;
+    const newBestBadge = document.getElementById('go-new-best');
+    newBestBadge.style.display = isNewBest ? 'inline-block' : 'none';
+
+    document.getElementById('gameover-overlay').classList.add('show');
+    // animating stays true — input blocked until player taps Play Again
+  }, 4200);
+}
+
+// ═══════════════════════════════════════════
+//  ORBIT (drag to rotate)
+// ═══════════════════════════════════════════
+let rotX=-28, rotY=38, drag=null;
+const cubeRoot  = document.getElementById('cube-root');
+const sceneWrap = document.getElementById('scene-wrapper');
+
+function applyRot() { cubeRoot.style.transform=`rotateX(${rotX}deg) rotateY(${rotY}deg)`; }
+
+const onDS = (cx,cy) => { drag={cx,cy,rx:rotX,ry:rotY}; };
+const onDM = (cx,cy) => {
+  if(!drag) return;
+  rotX = drag.rx - (cy-drag.cy)*0.45;
+  rotY = drag.ry + (cx-drag.cx)*0.45;
+  applyRot();
+};
+const onDE = () => { drag=null; };
+
+sceneWrap.addEventListener('touchstart', e=>{ if(e.target.closest('button,.dp')) return; onDS(e.touches[0].clientX,e.touches[0].clientY); },{passive:true});
+sceneWrap.addEventListener('touchmove',  e=>{ onDM(e.touches[0].clientX,e.touches[0].clientY); },{passive:true});
+sceneWrap.addEventListener('touchend',   onDE);
+sceneWrap.addEventListener('mousedown',  e=>{ if(e.target.closest('button,.dp')) return; onDS(e.clientX,e.clientY); });
+window.addEventListener('mousemove', e=>onDM(e.clientX,e.clientY));
+window.addEventListener('mouseup',   onDE);
+
+// ═══════════════════════════════════════════
+//  INPUT: D-PAD + KEYBOARD
+// ═══════════════════════════════════════════
+document.querySelectorAll('.dp[data-dir]').forEach(btn=>{
+  // Use touchstart + preventDefault to stop the 300ms delayed synthetic click on iOS
+  btn.addEventListener('touchstart', e=>{
+    e.stopPropagation();
+    e.preventDefault();
+    doMove(btn.dataset.dir);
+  }, {passive:false});
+  // Click handles mouse / non-touch devices
+  btn.addEventListener('click', e=>{
+    // Only fire on genuine mouse clicks (not synthetic touch-generated clicks)
+    if(e.detail === 0) return; // detail===0 means keyboard-triggered, detail>0 means mouse
+    e.stopPropagation();
+    doMove(btn.dataset.dir);
+  });
+});
+
+document.addEventListener('keydown', e=>{
+  const map={ArrowRight:'right',ArrowLeft:'left',ArrowDown:'down',ArrowUp:'up',
+             d:'right',a:'left',s:'down',w:'up',e:'out',q:'in','.':'out',',':'in'};
+  if(map[e.key]){e.preventDefault();doMove(map[e.key]);}
+});
+
+// ═══════════════════════════════════════════
+//  UI / OVERLAY
+// ═══════════════════════════════════════════
+function showOverlay(title,msg){
+  document.getElementById('overlay-title').textContent=title;
+  document.getElementById('overlay-msg').innerHTML=msg.replace(/\n/g,'<br>');
+  document.getElementById('overlay').classList.add('show');
+}
+
+document.getElementById('btn-close').addEventListener('click',()=>document.getElementById('overlay').classList.remove('show'));
+document.getElementById('btn-new').addEventListener('click',()=>{document.getElementById('overlay').classList.remove('show');initGame();});
+
+// Play Again from Game Over screen → show start overlay with last score
+document.getElementById('btn-go-play').addEventListener('click', () => {
+  document.getElementById('gameover-overlay').classList.remove('show');
+  animating = false;
+  // Build start overlay content including last game score
+  const lastScore = parseInt(document.getElementById('go-final-score').textContent) || 0;
+  const lastBest  = parseInt(document.getElementById('go-best-score').textContent) || 0;
+  const scoreNote = lastScore > 0
+    ? `\n\nLast game: <span style="color:var(--accent);font-weight:700">${lastScore.toLocaleString()}</span> &nbsp;·&nbsp; Best: <span style="color:rgba(255,210,20,0.9);font-weight:700">${lastBest.toLocaleString()}</span>`
+    : '';
+  showOverlay('CUBE³',
+    'Use the D-pad to send <span style="color:var(--accent)">real cubic tiles</span> flying through a 3×3×3 space.\n\n'+
+    'Tiles collide and merge across all three layers.\n\n'+
+    'Reach <span style="color:var(--accent)">2048</span> to win!' + scoreNote);
+});
+
+document.getElementById('btn-help').addEventListener('click',()=>showOverlay('HOW TO PLAY',
+  '🎲 All 27 cubic tiles slide through all 3 layers simultaneously.\n\n'+
+  '✨ Matching cubes that collide merge and double in value.\n\n'+
+  '🎯 Reach 2048 to win — then keep going for a high score!\n\n'+
+  '👆 Drag the cube to orbit and inspect any angle.\n\n'+
+  '🕹 D-pad: ↑↓←→ + ▲▼ (Z depth in/out)\n'+
+  'Keyboard: WASD + Q(in) / E(out)'));
+
+// ═══════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════
+showOverlay('CUBE³',
+  'A 3D twist on 2048.\n\n'+
+  'Use the D-pad to send <span style="color:var(--accent)">real cubic tiles</span> flying through a 3×3×3 space.\n\n'+
+  'Tiles collide and merge across all three layers.\n\n'+
+  'Reach <span style="color:var(--accent)">2048</span> to win!');
+
+initGame();
+</script>
+</body>
+</html>
